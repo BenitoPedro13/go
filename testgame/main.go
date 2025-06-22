@@ -14,10 +14,21 @@ var (
 	grassSprite  rl.Texture2D
 	playerSprite rl.Texture2D
 
-	playerSrc  rl.Rectangle
-	playerDest rl.Rectangle
+	playerSrc                                     rl.Rectangle
+	playerDest                                    rl.Rectangle
+	playerMoving                                  bool
+	playerDir                                     int
+	playerUp, playerDown, playerLeft, playerRight bool
+	playerFrame                                   int
+
+	frameCount int
 
 	playerSpeed float32 = 3
+
+	musicPaused bool
+	music       rl.Music
+
+	cam rl.Camera2D
 )
 
 func drawScene() {
@@ -27,32 +38,100 @@ func drawScene() {
 
 func input() {
 	if rl.IsKeyDown(rl.KeyW) || rl.IsKeyDown(rl.KeyUp) {
-		playerDest.Y -= playerSpeed
+		playerMoving = true
+		playerDir = 1
+		playerUp = true
 	}
 	if rl.IsKeyDown(rl.KeyS) || rl.IsKeyDown(rl.KeyDown) {
-		playerDest.Y += playerSpeed
+		playerMoving = true
+		playerDir = 0
+		playerDown = true
 	}
 	if rl.IsKeyDown(rl.KeyA) || rl.IsKeyDown(rl.KeyLeft) {
-		playerDest.X -= playerSpeed
+		playerMoving = true
+		playerDir = 2
+		playerLeft = true
 	}
 	if rl.IsKeyDown(rl.KeyD) || rl.IsKeyDown(rl.KeyRight) {
-		playerDest.X += playerSpeed
+		playerMoving = true
+		playerDir = 3
+		playerRight = true
+	}
+	if rl.IsKeyPressed(rl.KeyQ) {
+		musicPaused = !musicPaused
+		if musicPaused {
+			rl.PauseMusicStream(music)
+		} else {
+			rl.ResumeMusicStream(music)
+		}
 	}
 }
 
 func update() {
 	running = !rl.WindowShouldClose()
+
+	// Reset movement flags at the beginning of the frame
+	playerMoving = false
+	playerUp = false
+	playerDown = false
+	playerLeft = false
+	playerRight = false
+
+	// Handle input after resetting flags
+	input()
+
+	playerSrc.X = 0
+
+	if playerMoving {
+		if playerUp {
+			playerDest.Y -= playerSpeed
+		}
+		if playerDown {
+			playerDest.Y += playerSpeed
+		}
+		if playerLeft {
+			playerDest.X -= playerSpeed
+		}
+		if playerRight {
+			playerDest.X += playerSpeed
+		}
+		if frameCount%8 == 0 {
+			playerFrame++
+			if playerFrame >= 4 {
+				playerFrame = 0
+			}
+		}
+		playerSrc.X = playerSrc.Width * float32(playerFrame)
+	} else {
+		// Reset to idle frame when not moving
+		playerFrame = 0
+	}
+
+	frameCount++
+
+	playerSrc.Y = playerSrc.Height * float32(playerDir)
+
+	rl.UpdateMusicStream(music)
+	if musicPaused {
+		rl.PauseMusicStream(music)
+	} else {
+		rl.ResumeMusicStream(music)
+	}
+
+	cam.Target = rl.NewVector2(float32(playerDest.X-playerDest.Width/2), float32(playerDest.Y-playerDest.Height/2))
 }
 
 func render() {
 	// Begin drawing
 	rl.BeginDrawing()
 	rl.ClearBackground(backgroundColor)
+	rl.BeginMode2D(cam)
 
 	// Draw scene
 	drawScene()
 
 	// End drawing
+	rl.EndMode2D()
 	rl.EndDrawing()
 }
 
@@ -69,12 +148,30 @@ func init() {
 	// Set player source rectangle
 	playerSrc = rl.NewRectangle(0, 0, 48, 48)
 	playerDest = rl.NewRectangle(200, 200, 100, 100)
+
+	// Load music
+	rl.InitAudioDevice()
+	music = rl.LoadMusicStream("res/sounds/game-music.mp3")
+	musicPaused = false
+	rl.PlayMusicStream(music)
+
+	// Set camera
+	cam = rl.NewCamera2D(
+		rl.NewVector2(float32(screenWidth/2), float32(screenHeight/2)),
+		rl.NewVector2(playerDest.X-playerDest.Width/2, playerDest.Y-playerDest.Height/2),
+		0.0,
+		1.0,
+	)
 }
 
 func quit() {
 	// Unload textures
 	rl.UnloadTexture(grassSprite)
 	rl.UnloadTexture(playerSprite)
+
+	// Unload music
+	rl.UnloadMusicStream(music)
+	rl.CloseAudioDevice()
 
 	// Close window
 	rl.CloseWindow()
@@ -83,7 +180,6 @@ func quit() {
 func main() {
 	// Main loop
 	for running {
-		input()
 		update()
 		render()
 	}
