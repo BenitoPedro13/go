@@ -4,7 +4,7 @@ import rl "github.com/gen2brain/raylib-go/raylib"
 
 const (
 	screenWidth  = 1000
-	screenHeight = 380
+	screenHeight = 800
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 	tileDest   rl.Rectangle
 	tileSrc    rl.Rectangle
 	tileMap    []int
-	srcMap     []string
+	srcMap     map[int][2]int // Mapeamento dos índices para coordenadas [x,y] no tileset
 	mapW, mapH int
 
 	playerSpeed float32 = 3
@@ -37,6 +37,61 @@ var (
 	cam rl.Camera2D
 )
 
+// Função para obter o tipo de tile correto baseado nos vizinhos
+func getAutotileIndex(x, y int) int {
+	// Verificar se existe tile nas posições adjacentes
+	hasTop := y > 0 && tileMap[(y-1)*mapW+x] != 0
+	hasBottom := y < mapH-1 && tileMap[(y+1)*mapW+x] != 0
+	hasLeft := x > 0 && tileMap[y*mapW+(x-1)] != 0
+	hasRight := x < mapW-1 && tileMap[y*mapW+(x+1)] != 0
+
+	// Sistema de autotiling baseado em bitmask
+	// Baseado no tileset 3x3 padrão:
+	// 1  2  3
+	// 4  5  6
+	// 7  8  9
+
+	// Cantos individuais
+	if !hasTop && !hasLeft && hasRight && hasBottom {
+		return 1 // Canto superior esquerdo
+	}
+	if !hasTop && hasLeft && !hasRight && hasBottom {
+		return 3 // Canto superior direito
+	}
+	if hasTop && !hasLeft && hasRight && !hasBottom {
+		return 7 // Canto inferior esquerdo
+	}
+	if hasTop && hasLeft && !hasRight && !hasBottom {
+		return 9 // Canto inferior direito
+	}
+
+	// Bordas
+	if !hasTop && hasLeft && hasRight && hasBottom {
+		return 2 // Borda superior
+	}
+	if hasTop && hasLeft && hasRight && !hasBottom {
+		return 8 // Borda inferior
+	}
+	if hasTop && !hasLeft && hasRight && hasBottom {
+		return 4 // Borda esquerda
+	}
+	if hasTop && hasLeft && !hasRight && hasBottom {
+		return 6 // Borda direita
+	}
+
+	// Tile central (completamente cercado)
+	if hasTop && hasBottom && hasLeft && hasRight {
+		return 5
+	}
+
+	// Tile isolado
+	if !hasTop && !hasBottom && !hasLeft && !hasRight {
+		return 5 // Usar tile central para tile isolado
+	}
+
+	return 5 // Padrão - tile central
+}
+
 func drawScene() {
 	// rl.DrawTexture(grassSprite, 100, 50, rl.White)
 
@@ -45,8 +100,20 @@ func drawScene() {
 			tileDest.X = tileDest.Width * float32(i%mapW)
 			tileDest.Y = tileDest.Height * float32(i/mapW)
 
-			tileSrc.X = tileSrc.Width * float32((tileMap[i]-1)%int(grassSprite.Width/int32(tileSrc.Width)))
-			tileSrc.Y = tileSrc.Height * float32((tileMap[i]-1)/int(grassSprite.Width/int32(tileSrc.Width)))
+			// Usar autotiling para obter o índice correto
+			x := i % mapW
+			y := i / mapW
+			tileIndex := getAutotileIndex(x, y)
+
+			// Usar srcMap para obter as coordenadas corretas no tileset
+			if coords, exists := srcMap[tileIndex]; exists {
+				tileSrc.X = tileSrc.Width * float32(coords[0])
+				tileSrc.Y = tileSrc.Height * float32(coords[1])
+			} else {
+				// Fallback para tile central se não encontrar
+				tileSrc.X = tileSrc.Width * 1  // Centro X
+				tileSrc.Y = tileSrc.Height * 1 // Centro Y
+			}
 
 			rl.DrawTexturePro(grassSprite, tileSrc, tileDest, rl.NewVector2(tileDest.Width, tileDest.Height), 0, rl.White)
 		}
@@ -158,10 +225,48 @@ func render() {
 }
 
 func loadMap() {
-	mapW = 5
-	mapH = 5
-	for i := 0; i < (mapW * mapH); i++ {
-		tileMap = append(tileMap, 1)
+	mapW = 50
+	mapH = 60
+
+	// Inicializar com tiles vazios
+	tileMap = make([]int, mapW*mapH)
+
+	// Criar algumas áreas de grama com formatos interessantes
+	for y := 0; y < mapH; y++ {
+		for x := 0; x < mapW; x++ {
+			i := y*mapW + x
+
+			// Área principal de grama (grande retângulo)
+			if x >= 5 && x < 45 && y >= 5 && y < 55 {
+				tileMap[i] = 1
+			}
+
+			// Remover algumas áreas para criar lagos/espaços vazios
+			// Lago circular no centro
+			centerX, centerY := 25, 30
+			dx, dy := float32(x-centerX), float32(y-centerY)
+			if dx*dx+dy*dy < 36 { // Raio de 6
+				tileMap[i] = 0
+			}
+
+			// Pequeno lago no canto superior direito
+			if x >= 35 && x < 42 && y >= 8 && y < 15 {
+				tileMap[i] = 0
+			}
+
+			// Caminho/rio diagonal
+			if x-y > 15 && x-y < 20 && y > 20 && y < 50 {
+				tileMap[i] = 0
+			}
+
+			// Pequenas ilhas
+			if x >= 15 && x < 20 && y >= 45 && y < 50 {
+				tileMap[i] = 1
+			}
+			if x >= 30 && x < 35 && y >= 15 && y < 20 {
+				tileMap[i] = 1
+			}
+		}
 	}
 }
 
@@ -174,15 +279,32 @@ func init() {
 	// Load textures
 	grassSprite = rl.LoadTexture("res/Tilesets/Grass.png")
 
-	// Set tile source and destination rectangles
-	tileDest = rl.NewRectangle(0, 0, 16, 16)
+	// Set tile source and destination rectangles (aumentar o tamanho para melhor visualização)
+	tileDest = rl.NewRectangle(0, 0, 32, 32)
 	tileSrc = rl.NewRectangle(0, 0, 16, 16)
+
+	// Inicializar srcMap com coordenadas corretas do tileset 3x3
+	// Baseado no layout: 1=canto sup.esq, 2=borda sup, 3=canto sup.dir
+	//                    4=borda esq,    5=centro,    6=borda dir
+	//                    7=canto inf.esq, 8=borda inf, 9=canto inf.dir
+	srcMap = map[int][2]int{
+		1: {0, 0}, // Canto superior esquerdo
+		2: {1, 0}, // Borda superior
+		3: {2, 0}, // Canto superior direito
+		4: {0, 1}, // Borda esquerda
+		5: {1, 1}, // Centro
+		6: {2, 1}, // Borda direita
+		7: {0, 2}, // Canto inferior esquerdo
+		8: {1, 2}, // Borda inferior
+		9: {2, 2}, // Canto inferior direito
+	}
 
 	playerSprite = rl.LoadTexture("res/Characters/BasicCharakterSpritesheet.png")
 
 	// Set player source rectangle
 	playerSrc = rl.NewRectangle(0, 0, 48, 48)
-	playerDest = rl.NewRectangle(200, 200, 100, 100)
+	// Posicionar o player no centro da área de grama
+	playerDest = rl.NewRectangle(25*32, 30*32, 100, 100)
 
 	// Load music
 	rl.InitAudioDevice()
@@ -195,7 +317,7 @@ func init() {
 		rl.NewVector2(float32(screenWidth/2), float32(screenHeight/2)),
 		rl.NewVector2(playerDest.X-playerDest.Width/2, playerDest.Y-playerDest.Height/2),
 		0.0,
-		1.5,
+		1.3, // Reduzir o zoom para ver mais do mapa
 	)
 
 	// Load map
