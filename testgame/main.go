@@ -80,7 +80,7 @@ func update() {
 	// Handle input after resetting flags
 	input()
 
-	playerSrc.X = 0
+	playerSrc.X = playerSrc.Width * float32(playerFrame)
 
 	if playerMoving {
 		if playerUp {
@@ -95,20 +95,23 @@ func update() {
 		if playerRight {
 			playerDest.X += playerSpeed
 		}
-		if frameCount%8 == 0 {
+		if frameCount%8 == 1 {
 			playerFrame++
-			if playerFrame >= 4 {
-				playerFrame = 0
-			}
 		}
-		playerSrc.X = playerSrc.Width * float32(playerFrame)
-	} else {
+	} else if frameCount%45 == 1 {
 		// Reset to idle frame when not moving
-		playerFrame = 0
+		playerFrame++
 	}
 
 	frameCount++
+	if playerFrame > 3 {
+		playerFrame = 0
+	}
+	if !playerMoving && playerFrame > 1 {
+		playerFrame = 0
+	}
 
+	playerSrc.X = playerSrc.Width * float32(playerFrame)
 	playerSrc.Y = playerSrc.Height * float32(playerDir)
 
 	rl.UpdateMusicStream(music)
